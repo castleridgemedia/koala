@@ -7,7 +7,7 @@ module Koala
     class GraphBatchAPI < API
       # inside a batch call we can do anything a regular Graph API can do
       include GraphAPIMethods
-
+      MAX_BATCH_SET_SIZE = 50
       attr_reader :original_api
       def initialize(access_token, api)
         super(access_token)
@@ -36,8 +36,19 @@ module Koala
       alias_method :graph_call_outside_batch, :graph_call
       alias_method :graph_call, :graph_call_in_batch
 
-      # execute the queued batch calls
       def execute(http_options = {})
+      	return [] unless batch_calls.length > 0
+	return execute_partial(http_options) unless batch_calls.length > MAX_BATCH_SET_SIZE
+	temp_batch_calls = batch_calls.reverse!
+	full_results = []
+	while temp_batch_calls.length > 0
+		batch_calls = temp_batch_calls.pop(50).reverse
+		full_results << execute_partial(http_options)
+	end
+	full_results.flatten
+      end
+      # execute the queued batch calls
+      def execute_partial(http_options = {})
         return [] unless batch_calls.length > 0
         # Turn the call args collected into what facebook expects
         args = {}
