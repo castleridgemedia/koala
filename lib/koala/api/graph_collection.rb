@@ -34,6 +34,34 @@ module Koala
           @raw_response['count']
         end
 
+        def slurp
+          stride = self.count
+          offset = stride
+          total_count = self.fb_count
+
+          results = []
+          self.each {|row| results << row}
+          root = self.next_page_params[0]
+          params = self.next_page_params[1]
+
+
+          other_page_results = @api.batch do |b|
+            while (offset < total_count)
+              p = params.clone
+              p["offset"] = offset
+              b.get_page([root, p])
+              offset += stride
+            end
+          end
+
+          other_page_results.each do |thebatch|
+            thebatch.each do |item|
+              results << item
+            end
+          end
+          results
+        end
+
         # @private
         # Turn the response into a GraphCollection if they're pageable;
         # if not, return the original response.
