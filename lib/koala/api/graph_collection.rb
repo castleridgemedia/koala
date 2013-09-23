@@ -44,7 +44,6 @@ module Koala
           root = self.next_page_params[0]
           params = self.next_page_params[1]
 
-
           other_page_results = @api.batch do |b|
             while (offset < total_count)
               p = params.clone
@@ -52,13 +51,8 @@ module Koala
               b.get_page([root, p])
               offset += stride
             end
-          end
-
-          other_page_results.each do |thebatch|
-            thebatch.each do |item|
-              results << item
-            end
-          end
+          end.flatten
+          results += other_page_results
           results
         end
 
