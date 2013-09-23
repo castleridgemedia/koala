@@ -46,13 +46,30 @@ module Koala
         return [] unless batch_calls.length > 0
         return execute_partial(http_options) unless batch_calls.length > MAX_BATCH_SET_SIZE
         temp_batch_calls = batch_calls.reverse!
-        full_results = []
-        while temp_batch_calls.length > 0
-          set_batch_calls(temp_batch_calls.pop(MAX_BATCH_SET_SIZE).reverse)
-          full_results << execute_partial(http_options)
+        full_results = batch_calls.collect { nil }
+        threads = []
+        temp_batch_calls.each_with_index.each_slice(MAX_BATCH_SET_SIZE) do |slice|
+          threads << Thread.new {
+            graph = Koala::Facebook::API.new(self.access_token)
+            indices = []
+            calls = []
+            slice.each do |request, index|
+              calls << request
+              indices << index
+            end
+
+            inner_results = graph.batch do |b|
+              b.set_batch_calls(calls)
+            end
+
+            inner_results.zip(indices).each do |result, index|
+              full_results[index] = result
+            end
+          }
         end
+        threads.each { |thread| thread.join }
         set_batch_calls([])
-        full_results.flatten
+        full_results
       end
 
       def execute_partial(http_options = {})
