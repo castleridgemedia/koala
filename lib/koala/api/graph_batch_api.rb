@@ -45,7 +45,21 @@ module Koala
       def execute(http_options = {})
         return [] unless batch_calls.length > 0
         return execute_partial(http_options) unless batch_calls.length > MAX_BATCH_SET_SIZE
+
+        temp_batch_calls = batch_calls
+=begin
+        # old
         temp_batch_calls = batch_calls.reverse!
+        full_results = []
+        while temp_batch_calls.length > 0
+          set_batch_calls(temp_batch_calls.pop(MAX_BATCH_SET_SIZE).reverse)
+          full_results << execute_partial(http_options)
+        end
+        set_batch_calls([])
+        full_results.flatten
+        # /old
+=end
+        # new
         full_results = batch_calls.collect { nil }
         threads = []
         temp_batch_calls.each_with_index.each_slice(MAX_BATCH_SET_SIZE) do |slice|
@@ -70,6 +84,7 @@ module Koala
         threads.each { |thread| thread.join }
         set_batch_calls([])
         full_results
+        # /new
       end
 
       def execute_partial(http_options = {})
