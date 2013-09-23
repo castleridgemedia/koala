@@ -30,6 +30,10 @@ module Koala
           @api = api
         end
 
+        def fb_count
+          @raw_response['count']
+        end
+
         # @private
         # Turn the response into a GraphCollection if they're pageable;
         # if not, return the original response.
