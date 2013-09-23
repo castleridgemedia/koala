@@ -7,7 +7,7 @@ module Koala
     class GraphBatchAPI < API
       # inside a batch call we can do anything a regular Graph API can do
       include GraphAPIMethods
-      MAX_BATCH_SET_SIZE = 50
+      MAX_BATCH_SET_SIZE = 10
 
       attr_reader :original_api
       def initialize(access_token, api)
