@@ -5,6 +5,52 @@ module Koala
   module Facebook
     # @private
     class GraphBatchAPI < API
+
+      COUNT_LIMIT = 575
+      COUNT_PERIOD = 10.minutes
+
+      def get_count_key(access_token)
+        "request_count:facebook:#{access_token}:count"
+      end
+
+      def get_start_key(access_token)
+        "request_count:facebook:#{access_token}:start"
+      end
+
+      def redis_incr
+        redis = Redis.new
+        count_key = get_count_key(@access_token)
+        start_key = get_start_key(@access_token)
+
+        req_count = redis.get(count_key)
+        if !req_count
+          req_count = 0
+          redis.set(count_key, req_count)
+        else
+          req_count = req_count.to_i
+        end
+
+        req_start = redis.get(start_key)
+        if !req_start
+          req_start = Time.now.utc.to_i
+          redis.set(start_key, req_start)
+        else
+          req_start = req_start.to_i
+        end
+        redis.incr(count_key)
+
+        if (Time.now.utc.to_i - req_start) > COUNT_PERIOD
+          redis.set(count_key, 1)
+          redis.set(start_key, Time.now.utc.to_i)
+        else
+          if req_count >= COUNT_LIMIT
+            log "sleeping"
+            sleep 60
+          end
+        end
+        [redis, count_key, start_key]
+      end
+
       # inside a batch call we can do anything a regular Graph API can do
       include GraphAPIMethods
       MAX_BATCH_SET_SIZE = 10
@@ -61,27 +107,41 @@ module Koala
 =end
         # new
         full_results = batch_calls.collect { nil }
-        threads = []
-        temp_batch_calls.each_with_index.each_slice(MAX_BATCH_SET_SIZE) do |slice|
-          threads << Thread.new {
-            graph = Koala::Facebook::API.new(self.access_token)
-            indices = []
-            calls = []
-            slice.each do |request, index|
-              calls << request
-              indices << index
-            end
-
-            inner_results = graph.batch do |b|
-              b.set_batch_calls(calls)
-            end
-
-            inner_results.zip(indices).each do |result, index|
-              full_results[index] = result
-            end
-          }
+        ((temp_batch_calls.count / MAX_BATCH_SET_SIZE) + 1).times do
+          @access_token = access_token
+          redis_incr
         end
-        threads.each { |thread| thread.join }
+
+        max_threads = 10
+        slices = []
+        temp_batch_calls.each_with_index.each_slice(MAX_BATCH_SET_SIZE) do |slice|
+          slices << slice
+        end
+
+        slices.each_slice(max_threads) do |slice_slice|
+          threads = []
+          slice_slice.each do |slice|
+            threads << Thread.new {
+              graph = Koala::Facebook::API.new(self.access_token)
+              indices = []
+              calls = []
+              slice.each do |request, index|
+                calls << request
+                indices << index
+              end
+
+              inner_results = graph.batch do |b|
+                b.set_batch_calls(calls)
+              end
+
+              inner_results.zip(indices).each do |result, index|
+                full_results[index] = result
+              end
+            }
+
+          end
+          threads.each { |thread| thread.join }
+        end
         set_batch_calls([])
         full_results
         # /new
